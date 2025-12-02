@@ -1,0 +1,238 @@
+version: '3.8'
+
+# BOM Full Stack Application
+# Namespace: bom
+# Network: bom (internal) with only frontend publicly accessible
+
+# Global environment variables
+x-base-url: &base-url ${BASE_URL:-http://localhost:3000}
+
+services:
+  # PostgreSQL Database for Authentication Service
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: bom-postgres-auth
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bom_user
+      POSTGRES_PASSWORD: BomP0stgres@2025!SecureDB#
+      POSTGRES_DB: bom_auth_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bom_user -d bom_auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "postgres-auth"
+
+  # PostgreSQL Database for Integration Service
+  postgres-integration:
+    image: postgres:15-alpine
+    container_name: bom-postgres-integration
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: integration_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_integration_data:/var/lib/postgresql/data
+      - ./integration-service/database:/docker-entrypoint-initdb.d
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "postgres-integration"
+
+  # BOM Backend - Authentication Service
+  bom-be:
+    build:
+      context: ./bom-be
+      dockerfile: Dockerfile
+    container_name: bom-auth-service
+    restart: unless-stopped
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    environment:
+      - DB_HOST=postgres-auth
+      - DB_PORT=5432
+      - DB_NAME=bom_auth_db
+      - DB_USER=bom_user
+      - DB_PASSWORD=BomP0stgres@2025!SecureDB#
+      - DATABASE_URL=postgresql+asyncpg://bom_user:BomP0stgres@2025!SecureDB#@postgres-auth:5432/bom_auth_db
+      - SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - ADMIN_EMAIL=ishansaha@outlook.com
+      - ADMIN_PASSWORD=BomAdmin@2025!Secure
+      # Email configuration (update with your SMTP settings)
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-your-email@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-your-app-password}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@bom.com}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-BOM Platform}
+      - BASE_URL=*base-url
+      - VERIFICATION_URL_BASE=${BASE_URL:-http://localhost:3000}/auth/verify
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "auth-backend"
+      com.bom.access: "internal"
+
+  # Integration Service
+  integration-service:
+    build:
+      context: ./integration-service
+      dockerfile: Dockerfile
+    container_name: bom-integration-service
+    restart: unless-stopped
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres-integration
+      - DB_PORT=5432
+      - DB_NAME=integration_service
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - LOG_LEVEL=info
+      # Add your bot tokens via environment or .env file
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: 3000, path: '/api/health', method: 'GET' }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "integration"
+      com.bom.access: "internal"
+
+  # Playground Service - SBOM Analysis
+  playground-service:
+    build:
+      context: ./playground-service
+      dockerfile: Dockerfile
+    container_name: bom-playground-service
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+      - /var/run:rw,noexec,nosuid,size=50m
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "playground"
+      com.bom.access: "internal"
+
+  # Frontend - SBOM Web Application (Publicly Accessible)
+  sbom-fe:
+    build:
+      context: ./sbom-fe
+      dockerfile: Dockerfile
+    container_name: bom-frontend
+    restart: unless-stopped
+    depends_on:
+      bom-be:
+        condition: service_healthy
+      integration-service:
+        condition: service_healthy
+      playground-service:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - BASE_URL=*base-url
+      - NEXT_PUBLIC_BASE_URL=*base-url
+      - NEXT_PUBLIC_API_URL=http://bom-be:8001
+      - NEXT_PUBLIC_INTEGRATION_URL=http://integration-service:3000
+      - NEXT_PUBLIC_PLAYGROUND_URL=http://playground-service:8000
+    ports:
+      - "3000:3000"  # Only the frontend is publicly accessible
+    networks:
+      - bom
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "frontend"
+      com.bom.access: "public"
+
+volumes:
+  postgres_auth_data:
+    driver: local
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.volume: "auth-db"
+  
+  postgres_integration_data:
+    driver: local
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.volume: "integration-db"
+
+networks:
+  bom:
+    driver: bridge
+    name: bom
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.network: "internal"
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

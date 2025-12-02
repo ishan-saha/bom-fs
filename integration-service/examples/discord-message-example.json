@@ -1,4 +1,0 @@
-{
-    "receiver": "123456789012345678",
-    "message": "Hello! This is an example Discord message from the integration service. 🎮\n\nFeatures:\n- Direct message sending\n- Message history tracking\n- Database logging\n- Real-time delivery"
-}

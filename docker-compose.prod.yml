@@ -1,0 +1,144 @@
+# Production Docker Compose Override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Set BASE_URL environment variable: export BASE_URL=https://yourdomain.com (Linux/Mac) or $env:BASE_URL="https://yourdomain.com" (Windows)
+
+version: '3.8'
+
+services:
+  bom-be:
+    environment:
+      - BASE_URL=${BASE_URL:-https://yourdomain.com}
+      - VERIFICATION_URL_BASE=${BASE_URL:-https://yourdomain.com}/auth/verify
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=bom-be,namespace=bom"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  integration-service:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=integration,namespace=bom"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  playground-service:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=playground,namespace=bom"
+
+  sbom-fe:
+    environment:
+      - BASE_URL=${BASE_URL:-https://yourdomain.com}
+      - NEXT_PUBLIC_BASE_URL=${BASE_URL:-https://yourdomain.com}
+      - NEXT_PUBLIC_API_URL=${BASE_URL:-https://yourdomain.com}/api
+      - NEXT_PUBLIC_INTEGRATION_URL=${BASE_URL:-https://yourdomain.com}/integration
+      - NEXT_PUBLIC_PLAYGROUND_URL=${BASE_URL:-https://yourdomain.com}/playground
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=frontend,namespace=bom"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Nginx Reverse Proxy (Production)
+  nginx:
+    image: nginx:alpine
+    container_name: bom-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - sbom-fe
+    networks:
+      - bom
+    labels:
+      com.bom.namespace: "bom"
+      com.bom.service: "nginx"
+      com.bom.access: "public"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=nginx,namespace=bom"
+
+  postgres-auth:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=postgres-auth,namespace=bom"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  postgres-integration:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=postgres-integration,namespace=bom"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
