@@ -180,6 +180,48 @@ class VcsKeyService {
     return { redistributed: true, fingerprint: full.fingerprint, playground: result };
   }
 
+  /**
+   * Complete setup flow: Generate -> Activate -> Distribute -> Test
+   * This is a convenience method for initial setup
+   */
+  async setupComplete() {
+    await this._acquire();
+    try {
+      const steps = [];
+      
+      // Step 1: Generate
+      console.log('🔑 Generating new SSH key pair...');
+      const generated = await this.generateAndPersist();
+      steps.push({ step: 'generate', fingerprint: generated.fingerprint, status: 'success' });
+      
+      // Step 2: Activate
+      console.log('🔑 Activating SSH key...');
+      const activated = await this.activateKey(generated.fingerprint);
+      steps.push({ step: 'activate', fingerprint: activated.fingerprint, status: 'success' });
+      
+      // Step 3: Distribute
+      console.log('🔑 Distributing key to Playground...');
+      const distributed = await this.distributeKey(generated.privateKeyPlain, generated.publicKey, generated.fingerprint);
+      steps.push({ step: 'distribute', fingerprint: generated.fingerprint, status: 'success', playground: distributed });
+      
+      // Step 4: Test
+      console.log('🔑 Testing Playground connection...');
+      const testResult = await this.testPlayground();
+      steps.push({ step: 'test', status: 'success', result: testResult });
+      
+      console.log('✅ Complete setup successful');
+      
+      return {
+        success: true,
+        fingerprint: generated.fingerprint,
+        public_key: generated.publicKey,
+        steps
+      };
+    } finally {
+      this._release();
+    }
+  }
+
   async purgeOldInactive() {
     const res = await query(`SELECT fingerprint FROM vcs_keys WHERE active=false ORDER BY created_at DESC OFFSET $1`, [this.retainInactive]);
     let purged = 0;

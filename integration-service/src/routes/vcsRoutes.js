@@ -129,4 +129,77 @@ router.get('/metrics', async (_req, res) => {
   }
 });
 
+// Complete flow: Generate -> Activate -> Distribute -> Test
+router.post('/setup-complete', async (_req, res) => {
+  try {
+    const steps = [];
+    
+    // Step 1: Generate SSH key pair
+    console.log('🔑 Step 1: Generating SSH key pair...');
+    const generated = await vcsKeyService.generateAndPersist();
+    steps.push({
+      step: 1,
+      action: 'generate',
+      status: 'success',
+      fingerprint: generated.fingerprint,
+      public_key: generated.publicKey
+    });
+    console.log(`✅ Generated key with fingerprint: ${generated.fingerprint}`);
+    
+    // Step 2: Activate the key
+    console.log('🔑 Step 2: Activating SSH key...');
+    const activated = await vcsKeyService.activateKey(generated.fingerprint);
+    steps.push({
+      step: 2,
+      action: 'activate',
+      status: 'success',
+      fingerprint: activated.fingerprint,
+      active: activated.active
+    });
+    console.log(`✅ Activated key: ${activated.fingerprint}`);
+    
+    // Step 3: Distribute to Playground
+    console.log('🔑 Step 3: Distributing key to Playground...');
+    const distributed = await vcsKeyService.redistributeActiveKey();
+    steps.push({
+      step: 3,
+      action: 'distribute',
+      status: 'success',
+      fingerprint: distributed.fingerprint,
+      playground_response: distributed.playground
+    });
+    console.log(`✅ Distributed key to Playground: ${distributed.fingerprint}`);
+    
+    // Step 4: Test the connection
+    console.log('🔑 Step 4: Testing Playground connection...');
+    const testResult = await vcsKeyService.testPlayground();
+    steps.push({
+      step: 4,
+      action: 'test',
+      status: 'success',
+      test_result: testResult
+    });
+    console.log('✅ Connection test successful');
+    
+    res.json({
+      success: true,
+      message: 'SSH key setup completed successfully',
+      summary: {
+        fingerprint: generated.fingerprint,
+        public_key: generated.publicKey,
+        status: 'active',
+        tested: true
+      },
+      steps
+    });
+  } catch (e) {
+    console.error('❌ Setup failed:', e.message);
+    res.status(500).json({
+      success: false,
+      error: e.message,
+      stack: process.env.NODE_ENV === 'development' ? e.stack : undefined
+    });
+  }
+});
+
 module.exports = router;
