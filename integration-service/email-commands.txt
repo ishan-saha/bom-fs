@@ -1,0 +1,13 @@
+# Commands to run after setting up Gmail credentials
+
+# 1. Create sender profile (after editing gmail-sender-template.json)
+curl.exe -X POST http://localhost:3000/api/email/sender-profiles -H "Content-Type: application/json" -d "@gmail-sender-template.json"
+
+# 2. Send test email to chauhanishika97@gmail.com
+curl.exe -X POST http://localhost:3000/api/email/send -H "Content-Type: application/json" -d "{\"sender_profile_id\": 2, \"recipient_profile_id\": 2}"
+
+# 3. Check if email was sent successfully
+curl.exe http://localhost:3000/api/email/logs
+
+# 4. Test SMTP configuration (optional)
+curl.exe -X POST http://localhost:3000/api/email/test-config/2

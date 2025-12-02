@@ -1,0 +1,44 @@
+# Development Dockerfile with dev dependencies and volume mounting
+FROM node:18-alpine
+
+# Install dependencies for potential native modules
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Set environment variables for development
+ENV NODE_ENV=development
+
+# Expose the application port
+EXPOSE 3000
+
+# Health check for development
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "const http = require('http'); \
+    const options = { hostname: 'localhost', port: process.env.PORT || 3000, path: '/api/health', method: 'GET' }; \
+    const req = http.request(options, (res) => { \
+        if (res.statusCode === 200) { \
+            process.exit(0); \
+        } else { \
+            process.exit(1); \
+        } \
+    }); \
+    req.on('error', () => process.exit(1)); \
+    req.end();"
+
+# Start development server with nodemon
+CMD ["npm", "run", "dev"]

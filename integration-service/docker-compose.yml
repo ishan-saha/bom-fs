@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # Production integration service
+  integration-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=integration_service
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - LOG_LEVEL=info
+      # Add your bot tokens here or via .env file
+      # - TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+      # - DISCORD_BOT_TOKEN=your_discord_bot_token
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: process.env.PORT || 3000, path: '/api/health', method: 'GET' }; const req = http.request(options, (res) => { if (res.statusCode === 200) { process.exit(0); } else { process.exit(1); } }); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development integration service
+  integration-service-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=integration_service
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - LOG_LEVEL=debug
+      # Add your bot tokens here or via .env file
+      # - TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+      # - DISCORD_BOT_TOKEN=your_discord_bot_token
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - dev
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: process.env.PORT || 3000, path: '/api/health', method: 'GET' }; const req = http.request(options, (res) => { if (res.statusCode === 200) { process.exit(0); } else { process.exit(1); } }); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: integration_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d
+      - ./scripts:/app/scripts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Database initialization service
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=integration_service
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "npm run init-db && npm run add-discord-tables"]
+    profiles:
+      - init
+    restart: "no"
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@integration.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8082:80"
+    depends_on:
+      - postgres
+    profiles:
+      - admin
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: codeshuriken-network
+    external: false

@@ -1,0 +1,76 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Environment files (will be provided via Docker)
+.env
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# Test files and sample data
+*test*.json
+*sample*.json
+*.txt
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage
+
+# nyc test coverage
+.nyc_output
+
+# Temporary folders
+tmp/
+temp/
+
+# Example and template files
+*.example
+*template*
+
+# PowerShell and batch files (dev scripts)
+*.ps1
+*.bat
+*.sh
+
+# API testing files
+curl-*.json
+*-test-api.json
+test-*.json
+*-msg.json
+invalid*.json
