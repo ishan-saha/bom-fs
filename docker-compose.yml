@@ -13,6 +13,13 @@ services:
     image: postgres:15-alpine
     container_name: bom-postgres-auth
     restart: unless-stopped
+    user: postgres
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+      - /var/run/postgresql:rw,noexec,nosuid,size=50m
     environment:
       POSTGRES_USER: bom_user
       POSTGRES_PASSWORD: BomP0stgres@2025!SecureDB#
@@ -36,6 +43,13 @@ services:
     image: postgres:15-alpine
     container_name: bom-postgres-integration
     restart: unless-stopped
+    user: postgres
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+      - /var/run/postgresql:rw,noexec,nosuid,size=50m
     environment:
       POSTGRES_DB: integration_service
       POSTGRES_USER: postgres
@@ -43,7 +57,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_integration_data:/var/lib/postgresql/data
-      - ./integration-service/database:/docker-entrypoint-initdb.d
+      - ./integration-service/database:/docker-entrypoint-initdb.d:ro
     networks:
       - bom
     healthcheck:
@@ -62,8 +76,18 @@ services:
       dockerfile: Dockerfile
     container_name: bom-auth-service
     restart: unless-stopped
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
     depends_on:
       postgres-auth:
+        condition: service_healthy
+      playground-service:
         condition: service_healthy
     environment:
       - DB_HOST=postgres-auth
@@ -77,6 +101,7 @@ services:
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
       - ADMIN_EMAIL=ishansaha@outlook.com
       - ADMIN_PASSWORD=BomAdmin@2025!Secure
+      - PLAYGROUND_SERVICE_URL=http://playground-service:8000
       # Email configuration (update with your SMTP settings)
       - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -106,6 +131,14 @@ services:
       dockerfile: Dockerfile
     container_name: bom-integration-service
     restart: unless-stopped
+    user: "1001:1001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
     depends_on:
       postgres-integration:
         condition: service_healthy
@@ -141,6 +174,7 @@ services:
       dockerfile: Dockerfile
     container_name: bom-playground-service
     restart: unless-stopped
+    user: "1001:1001"
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -153,8 +187,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '2.0'
+          memory: 1G
         reservations:
           cpus: '0.5'
           memory: 256M
@@ -162,8 +196,9 @@ services:
       - NODE_ENV=production
       - LOG_LEVEL=info
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=100m
+      - /tmp:rw,noexec,nosuid,size=500m
       - /var/run:rw,noexec,nosuid,size=50m
+      - /home/playground:rw,noexec,nosuid,size=200m
     networks:
       - bom
     healthcheck:
@@ -182,8 +217,21 @@ services:
     build:
       context: ./sbom-fe
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8001
+        - NEXT_PUBLIC_INTEGRATION_URL=http://localhost:3001
+        - NEXT_PUBLIC_PLAYGROUND_URL=http://localhost:5002
     container_name: bom-frontend
     restart: unless-stopped
+    user: "1001:1001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+      - /app/.next/cache:rw,noexec,nosuid,size=200m
     depends_on:
       bom-be:
         condition: service_healthy
@@ -195,15 +243,15 @@ services:
       - NODE_ENV=production
       - BASE_URL=*base-url
       - NEXT_PUBLIC_BASE_URL=*base-url
-      - NEXT_PUBLIC_API_URL=http://bom-be:8001
-      - NEXT_PUBLIC_INTEGRATION_URL=http://integration-service:3000
-      - NEXT_PUBLIC_PLAYGROUND_URL=http://playground-service:8000
+      - NEXT_PUBLIC_API_URL=http://bom-auth-service:8001
+      - NEXT_PUBLIC_INTEGRATION_URL=http://bom-integration-service:3000
+      - NEXT_PUBLIC_PLAYGROUND_URL=http://bom-playground-service:8000
     ports:
       - "3000:3000"  # Only the frontend is publicly accessible
     networks:
       - bom
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: 3000, path: '/', method: 'GET' }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();"]
       interval: 30s
       timeout: 10s
       retries: 3
